@@ -21,6 +21,8 @@
 
 @property (nonatomic, strong) NSArray<NSString *> *certNames;
 
+@property (nonatomic, strong) NSString *userP12Pwd;
+
 @end
 
 @implementation NSURLSessionSSLPinningDelegate
@@ -53,7 +55,7 @@
 }
 
 - (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential * _Nullable credential))completionHandler {
-
+    NSLog(@"AuthenticationMethod: %@", [[challenge protectionSpace] authenticationMethod]);
     if ([[[challenge protectionSpace] authenticationMethod] isEqualToString:NSURLAuthenticationMethodServerTrust]) {
         NSString *domain = challenge.protectionSpace.host;
         SecTrustRef serverTrust = [[challenge protectionSpace] serverTrust];
@@ -76,8 +78,48 @@
             completionHandler(NSURLSessionAuthChallengeRejectProtectionSpace, NULL);
         }
     } else {
-        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, NULL);
+        // client authentication
+        SecIdentityRef identity = NULL;
+        SecTrustRef trust = NULL;
+        NSString *p12 = [[NSBundle mainBundle] pathForResource:@"user"ofType:@"p12"];
+        NSFileManager *fileManager =[NSFileManager defaultManager];
+
+        if(![fileManager fileExistsAtPath:p12]) {
+            NSLog(@"client.p12:not exist");
+        } else {
+            NSData *PKCS12Data = [NSData dataWithContentsOfFile:p12];
+            if ([[self class]extractIdentity:&identity andTrust:&trust fromPKCS12Data:PKCS12Data withUserP12Pwd:self.userP12Pwd]) {
+                SecCertificateRef certificate = NULL;
+                SecIdentityCopyCertificate(identity, &certificate);
+                const void*certs[] = {certificate};
+                CFArrayRef certArray =CFArrayCreate(kCFAllocatorDefault, certs,1,NULL);
+                NSURLCredential *credential =[NSURLCredential credentialWithIdentity:identity certificates:(__bridge  NSArray*)certArray persistence:NSURLCredentialPersistencePermanent];
+                completionHandler(NSURLSessionAuthChallengeUseCredential, credential);
+            }
+        }
+//        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, NULL);
     }
+}
+
++(BOOL)extractIdentity:(SecIdentityRef*)outIdentity andTrust:(SecTrustRef *)outTrust fromPKCS12Data:(NSData *)inPKCS12Data withUserP12Pwd:(NSString *) userP12Pwd {
+    NSDictionary*optionsDictionary = @{(__bridge id) kSecImportExportPassphrase : userP12Pwd};
+
+    CFArrayRef items = CFArrayCreate(NULL, 0, 0, NULL);
+    OSStatus securityError = SecPKCS12Import((__bridge CFDataRef)inPKCS12Data,(__bridge CFDictionaryRef)optionsDictionary,&items);
+
+    if(securityError == 0) {
+        CFDictionaryRef myIdentityAndTrust =CFArrayGetValueAtIndex(items,0);
+        const void*tempIdentity =NULL;
+        tempIdentity= CFDictionaryGetValue (myIdentityAndTrust,kSecImportItemIdentity);
+        *outIdentity = (SecIdentityRef)tempIdentity;
+        const void*tempTrust =NULL;
+        tempTrust = CFDictionaryGetValue(myIdentityAndTrust,kSecImportItemTrust);
+        *outTrust = (SecTrustRef)tempTrust;
+    } else {
+        NSLog(@"Failedwith error code %d",(int)securityError);
+        return NO;
+    }
+    return YES;
 }
 
 @end
@@ -111,7 +153,7 @@ RCT_EXPORT_METHOD(fetch:(NSString *)url obj:(NSDictionary *)obj callback:(RCTRes
             [request setHTTPMethod:obj[@"method"]];
         }
         if (obj[@"timeoutInterval"]) {
-          [request setTimeoutInterval:[obj[@"timeoutInterval"] doubleValue] / 1000];
+            [request setTimeoutInterval:[obj[@"timeoutInterval"] doubleValue] / 1000];
         }
         if (obj[@"headers"] && [obj[@"headers"] isKindOfClass:[NSDictionary class]]) {
             NSMutableDictionary *m = [obj[@"headers"] mutableCopy];
@@ -129,6 +171,7 @@ RCT_EXPORT_METHOD(fetch:(NSString *)url obj:(NSDictionary *)obj callback:(RCTRes
     }
     if (obj && obj[@"sslPinning"] && obj[@"sslPinning"][@"cert"]) {
         NSURLSessionSSLPinningDelegate *delegate = [[NSURLSessionSSLPinningDelegate alloc] initWithCertNames:@[obj[@"sslPinning"][@"cert"]]];
+        delegate.userP12Pwd = obj[@"sslPinning"][@"p12pwd"];
         session = [NSURLSession sessionWithConfiguration:self.sessionConfig delegate:delegate delegateQueue:[NSOperationQueue mainQueue]];
     } else if (obj && obj[@"sslPinning"] && obj[@"sslPinning"][@"certs"]) {
         // load all certs
