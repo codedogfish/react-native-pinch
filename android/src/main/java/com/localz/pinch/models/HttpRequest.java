@@ -9,6 +9,7 @@ public class HttpRequest {
     public String body;
     public String[] certFilenames;
     public int timeout;
+    public String userP12Pwd;
 
     private static final int DEFAULT_TIMEOUT = 10000;
 

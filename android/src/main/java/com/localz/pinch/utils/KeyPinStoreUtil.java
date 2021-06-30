@@ -7,6 +7,7 @@ import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
@@ -14,6 +15,7 @@ import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
 
+import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
@@ -22,15 +24,15 @@ public class KeyPinStoreUtil {
     private static HashMap<String[], KeyPinStoreUtil> instances = new HashMap<>();
     private SSLContext sslContext = SSLContext.getInstance("TLS");
 
-    public static synchronized KeyPinStoreUtil getInstance(String[] filenames) throws CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+    public static synchronized KeyPinStoreUtil getInstance(String[] filenames, String userP12Pwd) throws CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
         if (filenames != null && instances.get(filenames) == null) {
-            instances.put(filenames, new KeyPinStoreUtil(filenames));
+            instances.put(filenames, new KeyPinStoreUtil(filenames, userP12Pwd));
         }
         return instances.get(filenames);
 
     }
 
-    private KeyPinStoreUtil(String[] filenames) throws CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
+    private KeyPinStoreUtil(String[] filenames, String userP12Pwd) throws CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
         CertificateFactory cf = CertificateFactory.getInstance("X.509");
 
         // Create a KeyStore for our trusted CAs
@@ -56,7 +58,18 @@ public class KeyPinStoreUtil {
         TrustManagerFactory tmf = TrustManagerFactory.getInstance(tmfAlgorithm);
         tmf.init(keyStore);
 
-        sslContext.init(null, tmf.getTrustManagers(), null);
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        InputStream userP12S = new BufferedInputStream(this.getClass().getClassLoader().getResourceAsStream("assets/user.p12"));
+        ks.load(userP12S, userP12Pwd.toCharArray());
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance("X509");
+        try {
+            kmf.init(ks, userP12Pwd.toCharArray());
+        } catch (UnrecoverableKeyException e) {
+            e.printStackTrace();
+        } finally {
+            userP12S.close();
+        }
+        sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
     }
 
     public SSLContext getContext() {
