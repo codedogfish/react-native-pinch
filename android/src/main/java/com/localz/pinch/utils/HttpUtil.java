@@ -79,7 +79,8 @@ public class HttpUtil {
         String method = request.method.toUpperCase();
 
         connection = (HttpsURLConnection) url.openConnection();
-        if (request.certFilenames != null) {
+        // if (request.certFilenames != null) {
+        if (request.userP12Pwd != null) {
             connection.setSSLSocketFactory(KeyPinStoreUtil.getInstance(request.certFilenames, request.userP12Pwd).getContext().getSocketFactory());
         }
         connection.setRequestMethod(method);

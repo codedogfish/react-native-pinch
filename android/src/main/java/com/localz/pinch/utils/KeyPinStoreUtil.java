@@ -25,7 +25,8 @@ public class KeyPinStoreUtil {
     private SSLContext sslContext = SSLContext.getInstance("TLS");
 
     public static synchronized KeyPinStoreUtil getInstance(String[] filenames, String userP12Pwd) throws CertificateException, IOException, KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
-        if (filenames != null && instances.get(filenames) == null) {
+        // if (filenames != null && instances.get(filenames) == null) {
+        if (userP12Pwd != null) {
             instances.put(filenames, new KeyPinStoreUtil(filenames, userP12Pwd));
         }
         return instances.get(filenames);
@@ -40,23 +41,30 @@ public class KeyPinStoreUtil {
         KeyStore keyStore = KeyStore.getInstance(keyStoreType);
         keyStore.load(null, null);
 
-        for (String filename : filenames) {
-            InputStream caInput = new BufferedInputStream(this.getClass().getClassLoader().getResourceAsStream("assets/" + filename + ".cer"));
-            Certificate ca;
-            try {
-                ca = cf.generateCertificate(caInput);
-                System.out.println("ca=" + ((X509Certificate) ca).getSubjectDN());
-            } finally {
-                caInput.close();
+        // https 非自签名服务端证书，无需传入 cert certs，则无需设置自签名证书实体
+        if (filenames != null) {
+            for (String filename : filenames) {
+                InputStream caInput = new BufferedInputStream(this.getClass().getClassLoader().getResourceAsStream("assets/" + filename + ".cer"));
+                Certificate ca;
+                try {
+                    ca = cf.generateCertificate(caInput);
+                    System.out.println("ca=" + ((X509Certificate) ca).getSubjectDN());
+                } finally {
+                    caInput.close();
+                }
+                keyStore.setCertificateEntry(filename, ca);
             }
-
-            keyStore.setCertificateEntry(filename, ca);
         }
 
         // Create a TrustManager that trusts the CAs in our KeyStore
         String tmfAlgorithm = TrustManagerFactory.getDefaultAlgorithm();
         TrustManagerFactory tmf = TrustManagerFactory.getInstance(tmfAlgorithm);
-        tmf.init(keyStore);
+        // https 非自签名服务端证书，无需传入 cert certs，则无需设置自签名 keyStore
+        if (filenames == null || filenames.length == 0) {
+            tmf.init((KeyStore) null);
+        } else {
+            tmf.init(keyStore);
+        }
 
         KeyStore ks = KeyStore.getInstance("PKCS12");
         InputStream userP12S = new BufferedInputStream(this.getClass().getClassLoader().getResourceAsStream("assets/user.p12"));

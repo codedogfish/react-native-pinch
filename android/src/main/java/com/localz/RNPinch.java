@@ -99,18 +99,24 @@ public class RNPinch extends ReactContextBaseJavaModule {
                     request.headers = JsonUtil.convertReadableMapToJson(opts.getMap(OPT_HEADER_KEY));
                 }
                 if (opts.hasKey(OPT_SSL_PINNING_KEY)) {
-                    String fileName = opts.getMap(OPT_SSL_PINNING_KEY).getString("cert");
-                    String p12pwd = opts.getMap(OPT_SSL_PINNING_KEY).getString("p12pwd");
+                    ReadableMap sslPinningOpts = opts.getMap(OPT_SSL_PINNING_KEY);
+
+                    String p12pwd = sslPinningOpts.getString("p12pwd");
                     request.userP12Pwd = p12pwd;
-                    if (fileName != null) {
-                        request.certFilenames = new String[]{fileName};
-                    } else {
-                        ReadableArray certsStrings = opts.getMap(OPT_SSL_PINNING_KEY).getArray("certs");
-                        String[] certs = new String[certsStrings.size()];
-                        for (int i = 0; i < certsStrings.size(); i++) {
-                            certs[i] = certsStrings.getString(i);
+
+                    // https 非自签名服务端证书，无需传入 cert certs
+                    if (sslPinningOpts.hasKey("cert") || sslPinningOpts.hasKey("certs")) {
+                        String fileName = sslPinningOpts.getString("cert");
+                        if (fileName != null) {
+                            request.certFilenames = new String[]{fileName};
+                        } else {
+                            ReadableArray certsStrings = sslPinningOpts.getArray("certs");
+                            String[] certs = new String[certsStrings.size()];
+                            for (int i = 0; i < certsStrings.size(); i++) {
+                                certs[i] = certsStrings.getString(i);
+                            }
+                            request.certFilenames = certs;
                         }
-                        request.certFilenames = certs;
                     }
                 }
                 if (opts.hasKey(OPT_TIMEOUT_KEY)) {
