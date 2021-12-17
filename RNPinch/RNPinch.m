@@ -5,6 +5,8 @@
 //  Created by Paul Wong on 13/10/16.
 //  Copyright © 2016 Localz. All rights reserved.
 //
+//  Modified by Jack Yu on 17/12/21 17:10.
+//
 
 #import "RNPinch.h"
 #import "RCTBridge.h"
@@ -64,12 +66,13 @@
         NSArray *policies = @[(__bridge_transfer id)SecPolicyCreateSSL(true, (__bridge CFStringRef)domain)];
 
         SecTrustSetPolicies(serverTrust, (__bridge CFArrayRef)policies);
-
         // setup
-        SecTrustSetAnchorCertificates(serverTrust, (__bridge CFArrayRef)self.pinnedCertificateData);
-        SecTrustResultType result;
+        if ([self.certNames count] > 0) {
+            SecTrustSetAnchorCertificates(serverTrust, (__bridge CFArrayRef)self.pinnedCertificateData);
+        }
 
         // evaluate
+        SecTrustResultType result;
         OSStatus errorCode = SecTrustEvaluate(serverTrust, &result);
 
         BOOL evaluatesAsTrusted = (result == kSecTrustResultUnspecified || result == kSecTrustResultProceed);
@@ -180,7 +183,9 @@ RCT_EXPORT_METHOD(fetch:(NSString *)url obj:(NSDictionary *)obj callback:(RCTRes
         NSURLSessionSSLPinningDelegate *delegate = [[NSURLSessionSSLPinningDelegate alloc] initWithCertNames:obj[@"sslPinning"][@"certs"]];
         session = [NSURLSession sessionWithConfiguration:self.sessionConfig delegate:delegate delegateQueue:[NSOperationQueue mainQueue]];
     } else {
-        session = [NSURLSession sessionWithConfiguration:self.sessionConfig];
+        NSURLSessionSSLPinningDelegate *delegate = [[NSURLSessionSSLPinningDelegate alloc] initWithCertNames:@[]];
+        delegate.userP12Pwd = obj[@"sslPinning"][@"p12pwd"];
+        session = [NSURLSession sessionWithConfiguration:self.sessionConfig delegate:delegate delegateQueue:[NSOperationQueue mainQueue]];
     }
 
     __block NSURLSessionDataTask *dataTask = [session dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
