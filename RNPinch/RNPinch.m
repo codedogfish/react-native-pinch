@@ -57,12 +57,14 @@
 - (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential * _Nullable credential))completionHandler {
     NSLog(@"AuthenticationMethod: %@", [[challenge protectionSpace] authenticationMethod]);
     if ([[[challenge protectionSpace] authenticationMethod] isEqualToString:NSURLAuthenticationMethodServerTrust]) {
+        // server authentication
         NSString *domain = challenge.protectionSpace.host;
         SecTrustRef serverTrust = [[challenge protectionSpace] serverTrust];
 
         NSArray *policies = @[(__bridge_transfer id)SecPolicyCreateSSL(true, (__bridge CFStringRef)domain)];
 
         SecTrustSetPolicies(serverTrust, (__bridge CFArrayRef)policies);
+
         // setup
         SecTrustSetAnchorCertificates(serverTrust, (__bridge CFArrayRef)self.pinnedCertificateData);
         SecTrustResultType result;
@@ -85,19 +87,19 @@
         NSFileManager *fileManager =[NSFileManager defaultManager];
 
         if(![fileManager fileExistsAtPath:p12]) {
-            NSLog(@"client.p12:not exist");
+            NSLog(@"ClientAuthentication failed with client.p12 not exist");
         } else {
             NSData *PKCS12Data = [NSData dataWithContentsOfFile:p12];
             if ([[self class]extractIdentity:&identity andTrust:&trust fromPKCS12Data:PKCS12Data withUserP12Pwd:self.userP12Pwd]) {
                 SecCertificateRef certificate = NULL;
                 SecIdentityCopyCertificate(identity, &certificate);
                 const void*certs[] = {certificate};
-                CFArrayRef certArray =CFArrayCreate(kCFAllocatorDefault, certs,1,NULL);
+                CFArrayRef certArray = CFArrayCreate(kCFAllocatorDefault, certs, 1, NULL);
                 NSURLCredential *credential =[NSURLCredential credentialWithIdentity:identity certificates:(__bridge  NSArray*)certArray persistence:NSURLCredentialPersistencePermanent];
                 completionHandler(NSURLSessionAuthChallengeUseCredential, credential);
             }
         }
-//        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, NULL);
+        // completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, NULL);
     }
 }
 
@@ -105,18 +107,18 @@
     NSDictionary*optionsDictionary = @{(__bridge id) kSecImportExportPassphrase : userP12Pwd};
 
     CFArrayRef items = CFArrayCreate(NULL, 0, 0, NULL);
-    OSStatus securityError = SecPKCS12Import((__bridge CFDataRef)inPKCS12Data,(__bridge CFDictionaryRef)optionsDictionary,&items);
+    OSStatus securityError = SecPKCS12Import((__bridge CFDataRef)inPKCS12Data, (__bridge CFDictionaryRef)optionsDictionary, &items);
 
-    if(securityError == 0) {
-        CFDictionaryRef myIdentityAndTrust =CFArrayGetValueAtIndex(items,0);
-        const void*tempIdentity =NULL;
-        tempIdentity= CFDictionaryGetValue (myIdentityAndTrust,kSecImportItemIdentity);
+    if (securityError == 0) {
+        CFDictionaryRef myIdentityAndTrust = CFArrayGetValueAtIndex(items, 0);
+        const void*tempIdentity = NULL;
+        tempIdentity = CFDictionaryGetValue(myIdentityAndTrust, kSecImportItemIdentity);
         *outIdentity = (SecIdentityRef)tempIdentity;
-        const void*tempTrust =NULL;
-        tempTrust = CFDictionaryGetValue(myIdentityAndTrust,kSecImportItemTrust);
+        const void*tempTrust = NULL;
+        tempTrust = CFDictionaryGetValue(myIdentityAndTrust, kSecImportItemTrust);
         *outTrust = (SecTrustRef)tempTrust;
     } else {
-        NSLog(@"Failedwith error code %d",(int)securityError);
+        NSLog(@"ExtractIdentityAndTrust failed with error code: %d", (int)securityError);
         return NO;
     }
     return YES;
